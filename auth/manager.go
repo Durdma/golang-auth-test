@@ -33,8 +33,10 @@ func NewManager(signingKey string) (*Manager, error) {
 
 // Create new access token
 func (m *Manager) NewJWT(guid string, ttl time.Duration) (string, error) {
+	expiresAt := time.Now().Add(ttl).Unix()
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.StandardClaims{
-		ExpiresAt: time.Now().Add(ttl).Unix(),
+		ExpiresAt: expiresAt,
 		Subject:   guid,
 	})
 
@@ -65,7 +67,7 @@ func (m *Manager) Parse(accessToken string) (string, error) {
 
 // Generate new refresh token with base64 encoding
 func (m *Manager) NewRefreshToken() (string, error) {
-	b := make([]byte, 64)
+	b := make([]byte, 32)
 
 	s := rand.NewSource(time.Now().Unix())
 	r := rand.New(s)
@@ -74,7 +76,18 @@ func (m *Manager) NewRefreshToken() (string, error) {
 		return "", err
 	}
 
-	token := base64.StdEncoding.EncodeToString([]byte(b))
+	return fmt.Sprintf("%x", b), nil
+}
 
-	return fmt.Sprintf("%x", token), nil
+func EncodeRefreshToken(token string) string {
+	return base64.StdEncoding.EncodeToString([]byte(token))
+}
+
+func DecodeRefreshToken(token string) (string, error) {
+	encodedToken, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return "", err
+	}
+
+	return string(encodedToken), nil
 }

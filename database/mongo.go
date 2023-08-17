@@ -2,26 +2,40 @@ package database
 
 import (
 	"context"
-	"log"
+	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var Collection *mongo.Collection
-var Ctx = context.TODO()
+const timeout = 10 * time.Second
+const mongoURI = "mongodb://127.0.0.1:27017"
 
-func Init() {
-	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017/")
-	client, err := mongo.Connect(Ctx, clientOptions)
+func NewClient() (*mongo.Client, error) {
+	opts := options.Client().ApplyURI(mongoURI)
+
+	client, err := mongo.NewClient(opts)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	err = client.Ping(Ctx, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	err = client.Connect(ctx)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	Collection = client.Database("authDB").Collection("sessions")
+	err = client.Ping(context.Background(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+func GetCollection(client *mongo.Client) *mongo.Collection {
+	collection := client.Database("authDB").Collection("Users")
+	return collection
 }
