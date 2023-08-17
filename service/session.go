@@ -32,13 +32,15 @@ func GetTokens(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// fmt.Println("4")
-	if cursor, _ := recordCollection.Find(ctx, bson.M{"guid": guid}); cursor != nil {
-		c.IndentedJSON(http.StatusConflict, gin.H{"message": "This guid already has pair of tokens"})
-		return
+	if cursor, err := recordCollection.Find(ctx, bson.M{"guid": guid}); err == nil {
+		if cursor.Next(ctx) {
+			c.IndentedJSON(http.StatusConflict, gin.H{"message": "This guid already has pair of tokens"})
+			return
+		}
 	}
 	// fmt.Println("5")
 	accessToken, err := tokenManager.NewJWT(guid, 2*time.Minute)
-	//expiresAt := time.Now().Add(2 * time.Minute)
+	expiresAt := time.Now().Add(2 * time.Minute).Unix()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,6 +59,8 @@ func GetTokens(c *gin.Context) {
 	// fmt.Println("9")
 	// fmt.Println(accessToken)
 	// fmt.Println(refreshToken)
+	c.SetCookie("refreshToken", refreshToken, int(expiresAt), "/auth", "localhost", false, true)
+	//fmt.Println(c.Cookie("refreshToken"))
 	c.IndentedJSON(http.StatusCreated, models.Session{AccessToken: accessToken, RefreshToken: refreshToken})
 
 }
