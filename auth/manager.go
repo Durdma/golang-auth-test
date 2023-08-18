@@ -10,6 +10,10 @@ import (
 	"github.com/dgrijalva/jwt-go"
 )
 
+//TODO эндпоинт на получение пары готов, бд поднята, необходимо реализовать второй эндпоинт
+//TODO accessToken sha512 +; refreshToken в БД в bcrypt; refreshToken закодировать в base64 для передачи;
+//TODO сделать использование refreshToken одноразовым, после использования генерировать новую пару токенов по факту
+
 // Logic for access and refresh tokens generation
 type TokenManager interface {
 	NewJWT(guid string, ttl time.Duration) (string, error)
