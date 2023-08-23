@@ -7,37 +7,73 @@ import (
 	"math/rand"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/dgrijalva/jwt-go"
 )
 
-//TODO эндпоинт на получение пары готов, бд поднята, необходимо реализовать второй эндпоинт
-//TODO accessToken sha512 +; refreshToken в БД в bcrypt; refreshToken закодировать в base64 для передачи;
-//TODO сделать использование refreshToken одноразовым, после использования генерировать новую пару токенов по факту
+// Необходимые константы. НА ПРОДЕ КОНСТАНТЫ ДОЛЖНЫ БЫТЬ ПЕРЕМЕЩЕНЫ В ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
+//
+//	signKey - хранит специальную строку для подписи accessToken
+//	AccessTokenDuration - хранит время жизни AccessToken
+//	RefreshTokenDuration - хранит время жизни RefreshToken
+const (
+	signKey              = "key"
+	AccessTokenDuration  = 2 * time.Minute
+	RefreshTokenDuration = 5 * time.Minute
+)
 
-// Logic for access and refresh tokens generation
-type TokenManager interface {
-	NewJWT(guid string, ttl time.Duration) (string, error)
-	Parse(accessToken string) (string, error)
-	NewRefreshToken() (string, error)
-}
-
-// keep signing string
+// Сущность для генерации accessToken и refreshToken
 type Manager struct {
 	signingKey string
 }
 
-// Create new token manager with signing string
-func NewManager(signingKey string) (*Manager, error) {
+// Функция создает сущность для генерации токенов.
+func NewManager() (*Manager, error) {
+	signingKey := signKey
 	if signingKey == "" {
+		// Возвращает ошибку связанную с тем, что спец строка для подписи пуста
 		return nil, errors.New("empty signing key")
 	}
 
 	return &Manager{signingKey: signingKey}, nil
 }
 
-// Create new access token
-func (m *Manager) NewJWT(guid string, ttl time.Duration) (string, error) {
-	expiresAt := time.Now().Add(ttl).Unix()
+// Функция генерирует пару accessToken и RefreshToken
+// На вход фунция принимает пользовательский GUID
+// Функция возвращает:
+//
+//	зашифрованный в base64 refreshToken;
+//	захэшированный с помощью sha512 refershToken;
+//	полученный accessToken
+func (m *Manager) GenerateTokens(guid string) (encodedRefreshToken, hashedRefreshToken,
+	accessToken string, err error) {
+	accessToken, err = m.newJWT(guid)
+	if err != nil {
+		// Возвращает ошибку связанную с генерацией нового accessToken
+		return "", "", "", err
+	}
+
+	refreshToken, err := m.newRefreshToken()
+	if err != nil {
+		// Возвращает ошибку связанную с генерацией нового refrehToken
+		return "", "", "", err
+	}
+
+	encodedRefreshToken = encodeRefreshToken(refreshToken)
+	hashedRefreshToken, err = hashRefreshToken(refreshToken)
+	if err != nil {
+		// Возвращает ошибку связанную с хэшированием refreshToken
+		return "", "", "", err
+	}
+
+	err = nil
+	return
+}
+
+// Функция генерирует новый accessToken на основе пользовательского GUID
+func (m *Manager) newJWT(guid string) (string, error) {
+	expiresAt := time.Now().Add(AccessTokenDuration).Unix()
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.StandardClaims{
 		ExpiresAt: expiresAt,
@@ -47,30 +83,11 @@ func (m *Manager) NewJWT(guid string, ttl time.Duration) (string, error) {
 	return token.SignedString([]byte(m.signingKey))
 }
 
-// Parse access token
-func (m *Manager) Parse(accessToken string) (string, error) {
-	token, err := jwt.Parse(accessToken, func(token *jwt.Token) (i interface{}, err error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-
-		return []byte(m.signingKey), nil
-	})
-
-	if err != nil {
-		return "", err
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", fmt.Errorf("error get user claims from token")
-	}
-
-	return claims["sub"].(string), nil
-}
-
-// Generate new refresh token with base64 encoding
-func (m *Manager) NewRefreshToken() (string, error) {
+// Функция генерирует новый refreshToken
+// refreshToken генерируется с помощью стандартного пакета rand
+// Генератор значений в качестве сида берет время в unix формате
+// Длина refreshToken 32 байта
+func (m *Manager) newRefreshToken() (string, error) {
 	b := make([]byte, 32)
 
 	s := rand.NewSource(time.Now().Unix())
@@ -83,10 +100,12 @@ func (m *Manager) NewRefreshToken() (string, error) {
 	return fmt.Sprintf("%x", b), nil
 }
 
-func EncodeRefreshToken(token string) string {
+// Функция кодирует refreshToken в base64
+func encodeRefreshToken(token string) string {
 	return base64.StdEncoding.EncodeToString([]byte(token))
 }
 
+// Функция декодирует refreshToken из base64 в обычный набор байт
 func DecodeRefreshToken(token string) (string, error) {
 	encodedToken, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
@@ -94,4 +113,20 @@ func DecodeRefreshToken(token string) (string, error) {
 	}
 
 	return string(encodedToken), nil
+}
+
+// Функция хэширует refreshToken в bcrypt-хэш
+func hashRefreshToken(token string) (string, error) {
+	hashedRefreshToken, err := bcrypt.GenerateFromPassword([]byte(token), bcrypt.DefaultCost)
+
+	return string(hashedRefreshToken), err
+
+}
+
+// Функция сравнивает сумму полученного от пользователя refreshToken с хэш-суммой хэшированного refreshToken
+func CheckRefreshToken(token, hashedToken string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hashedToken), []byte(token))
+
+	return err == nil
+
 }
