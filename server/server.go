@@ -1,3 +1,4 @@
+// Добавление нового роутера
 package server
 
 func Init() {
