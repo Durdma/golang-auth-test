@@ -54,7 +54,7 @@ func (m *Manager) GenerateTokens(guid string) (encodedRefreshToken, hashedRefres
 		return "", "", "", err
 	}
 
-	refreshToken, err := m.newRefreshToken()
+	refreshToken, err := m.newRefreshToken(accessToken[len(accessToken)-6:])
 	if err != nil {
 		// Возвращает ошибку связанную с генерацией нового refrehToken
 		return "", "", "", err
@@ -83,18 +83,24 @@ func (m *Manager) newJWT(guid string) (string, error) {
 	return token.SignedString([]byte(m.signingKey))
 }
 
-// Функция генерирует новый refreshToken
-// refreshToken генерируется с помощью стандартного пакета rand
-// Генератор значений в качестве сида берет время в unix формате
+// Функция генерирует новый refreshToken.
+// refreshToken генерируется с помощью стандартного пакета rand.
+// Генератор значений в качестве сида берет время в unix формате.
+// В конец зашиваются байт коды 6 последних символов accessToken
+//
 // Длина refreshToken 32 байта
-func (m *Manager) newRefreshToken() (string, error) {
-	b := make([]byte, 32)
+func (m *Manager) newRefreshToken(sixCharAT string) (string, error) {
+	b := make([]byte, 26)
 
 	s := rand.NewSource(time.Now().Unix())
 	r := rand.New(s)
 
 	if _, err := r.Read(b); err != nil {
 		return "", err
+	}
+
+	for i := 0; i < len(sixCharAT); i++ {
+		b = append(b, byte(sixCharAT[i]))
 	}
 
 	return fmt.Sprintf("%x", b), nil
@@ -111,6 +117,9 @@ func DecodeRefreshToken(token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	fmt.Printf("decoded: %v\n", encodedToken)
+	fmt.Printf("decoded 2: %x\n", encodedToken)
 
 	return string(encodedToken), nil
 }
@@ -129,4 +138,21 @@ func CheckRefreshToken(token, hashedToken string) bool {
 
 	return err == nil
 
+}
+
+// Функция сравнивает последние 6 символов refreshToken и accessToken для подтверждения подлинности
+// токенов
+func CheckPairOfTokens(refreshToken, accessToken string) bool {
+	decodedRT, err := DecodeRefreshToken(refreshToken)
+	if err != nil {
+		return false
+	}
+
+	lastSixAT := []byte{}
+
+	for i := len(accessToken) - 3; i < len(accessToken); i++ {
+		lastSixAT = append(lastSixAT, byte(accessToken[i]))
+	}
+
+	return string(lastSixAT) != decodedRT[len(decodedRT)-6:]
 }

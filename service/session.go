@@ -2,7 +2,6 @@
 package service
 
 import (
-	"fmt"
 	"net/http"
 	"regexp"
 	"test-auth/auth"
@@ -38,7 +37,9 @@ func createSessionAndCookie(c *gin.Context, db *database.Database,
 		c.JSON(http.StatusInternalServerError, err.Error())
 		return
 	}
-	expiresAt := time.Now().Add(auth.RefreshTokenDuration).Unix() //Время жизни токена для cookie
+
+	expiresAt := int(auth.RefreshTokenDuration / time.Second) //Время жизни токена для cookie
+	accessExpiresAt := int(auth.AccessTokenDuration / time.Second)
 
 	newSession := models.Record{Guid: guid, RefreshToken: hashedRefreshToken, ExpiresAt: time.Now().Add(auth.RefreshTokenDuration)}
 
@@ -48,16 +49,18 @@ func createSessionAndCookie(c *gin.Context, db *database.Database,
 		c.JSON(http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	// Запись refreshToken'a в cookie приложения пользоваеля
-	c.SetCookie("refreshToken", encodedRefreshToken, int(expiresAt),
+	c.SetCookie("refreshToken", encodedRefreshToken, expiresAt,
+		"/auth", "localhost", false, true)
+
+	c.SetCookie("accessToken", accessToken, accessExpiresAt,
 		"/auth", "localhost", false, true)
 
 	// РАСКОМЕННТИТЬ ЕСЛИ ТЕСТИРОВАНИЕ ЧЕРЕЗ CURL или неоходимо посмотреть refreshToken, передаваемый клиенту
-	fmt.Println(encodedRefreshToken)
+	//fmt.Println(encodedRefreshToken)
 
 	// Запись accessToken'a в тело Response; Возврщает сообщние об успешном создании
-	c.JSON(http.StatusCreated, models.Response{AccessToken: accessToken})
+	//c.JSON(http.StatusCreated, models.Response{AccessToken: accessToken})
 }
 
 // Функция обрабатывает запрос на создание пары accessToken'a и refreshToken'a по пользовательскому GUID
@@ -101,6 +104,17 @@ func RefreshTokens(c *gin.Context) {
 	userRefreshToken, err := c.Cookie("refreshToken")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	userAccessToken, err := c.Cookie("accessToken")
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if !auth.CheckPairOfTokens(userRefreshToken, userAccessToken) {
+		c.AbortWithStatusJSON(http.StatusBadRequest, "Invalid pair of access and refresh tokens")
 		return
 	}
 
