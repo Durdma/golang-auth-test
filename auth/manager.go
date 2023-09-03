@@ -118,9 +118,6 @@ func DecodeRefreshToken(token string) (string, error) {
 		return "", err
 	}
 
-	fmt.Printf("decoded: %v\n", encodedToken)
-	fmt.Printf("decoded 2: %x\n", encodedToken)
-
 	return string(encodedToken), nil
 }
 
